@@ -1,0 +1,90 @@
+name: Stack Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      image-suffix:
+        type: string
+        default: ""
+      context:
+        type: string
+        default: "."
+      dockerfile:
+        type: string
+        default: "deploy/Dockerfile"
+    secrets:
+      deploy-token:
+        required: false
+      deploy-url:
+        required: false
+
+jobs:
+  docker-build:
+    name: Docker Build (${{ matrix.platform }})
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            tag: linux-amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            tag: linux-arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ghcr.io/${{ github.repository }}${{ inputs.image-suffix }}:${{ matrix.tag }}
+          provenance: false
+
+  manifest:
+    name: Manifest
+    needs: docker-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create manifest
+        run: |
+          docker buildx imagetools create -t ghcr.io/${{ github.repository }}${{ inputs.image-suffix }}:main \
+            ghcr.io/${{ github.repository }}${{ inputs.image-suffix }}:linux-amd64 \
+            ghcr.io/${{ github.repository }}${{ inputs.image-suffix }}:linux-arm64
+
+  deploy:
+    name: Trigger Deploy
+    needs: manifest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger webhook
+        env:
+          DEPLOY_TOKEN: ${{ secrets.deploy-token }}
+          DEPLOY_URL: ${{ secrets.deploy-url }}
+        if: env.DEPLOY_TOKEN != '' && env.DEPLOY_URL != ''
+        run: |
+          curl -sf -X POST --retry 5 --retry-delay 15 --retry-all-errors -H "Authorization: $DEPLOY_TOKEN" "$DEPLOY_URL"
