@@ -88,8 +88,12 @@ jobs:
         if: env.DEPLOY_TOKEN != '' && env.DEPLOY_URL != ''
         run: |
           for attempt in $(seq 1 10); do
-            if curl -sf -X POST -H "Authorization: $DEPLOY_TOKEN" "$DEPLOY_URL"; then
-              exit 0
+            if response=$(curl -sf -X POST -H "Authorization: $DEPLOY_TOKEN" "$DEPLOY_URL"); then
+              echo "$response"
+              case "$response" in
+                *"Deployment triggered"*) exit 0 ;;
+                *) echo "webhook did not trigger a deployment"; exit 1 ;;
+              esac
             fi
             sleep 15
           done
