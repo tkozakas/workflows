@@ -12,6 +12,9 @@ on:
       dockerfile:
         type: string
         default: "deploy/Dockerfile"
+      build-args:
+        type: string
+        default: ""
     secrets:
       deploy-token:
         required: false
@@ -52,6 +55,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           push: true
           tags: ghcr.io/${{ github.repository }}${{ inputs.image-suffix }}:${{ matrix.tag }}
+          build-args: ${{ inputs.build-args }}
           provenance: false
 
   manifest:
