@@ -92,13 +92,22 @@ jobs:
         if: env.DEPLOY_TOKEN != '' && env.DEPLOY_URL != ''
         run: |
           for attempt in $(seq 1 10); do
-            if response=$(curl -sf -X POST -H "Authorization: $DEPLOY_TOKEN" "$DEPLOY_URL"); then
-              echo "$response"
-              case "$response" in
-                *"Deployment triggered"*) exit 0 ;;
-                *) echo "webhook did not trigger a deployment"; exit 1 ;;
-              esac
-            fi
+            code=$(curl -sS -o /tmp/deploy-response -w '%{http_code}' -X POST \
+              -H "Authorization: $DEPLOY_TOKEN" "$DEPLOY_URL" || echo 000)
+            cat /tmp/deploy-response; echo
+            case "$code" in
+              2??)
+                if grep -q "Deployment triggered" /tmp/deploy-response; then
+                  exit 0
+                fi
+                echo "webhook did not trigger a deployment"
+                exit 1
+                ;;
+              404)
+                echo "::notice::no deploy webhook provisioned yet, run ansible to provision it"
+                exit 0
+                ;;
+            esac
             sleep 15
           done
           exit 1
